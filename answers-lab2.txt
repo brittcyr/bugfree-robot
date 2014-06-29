@@ -1,0 +1,40 @@
+Britt Cyr
+Caffeinated 6.828
+Lab 2 answers
+
+1.
+Entry   Base Virtual Address    Points to (logically):
+1023    0xffc0000               Page table for the top 4MB of memory
+1022    0xff80000               Page table for the second to top 4MB of memory
+960     KERNBASE                Page table for the bottom 4MB of memory
+959     ULIM                    Kernel stack and invalid memory
+956     UPAGES                  Page table mapping to "pages"
+2       0x0080000               
+1       0x0040000               
+0       0x0000000               Nothing
+
+
+2. 
+The address space has been separated to have [ULIM, UTOP) is only for the
+kernel.  The pages for the kernel were marked with different permissions. They
+do not have the PTE_U bit set so they cannot be accessed by the user.
+
+
+3. 
+The operating system can support 256MB of memory. This is because we mapped
+the kernel to the range [0xF0000000, 0xFFFFFFFF]. This is 256MB. So we cannot
+map to any addresses higher.
+
+
+4. 
+There is one page directory. This takes up one page = 4KB. This points to
+2^10 page tables which are each one page, so 2^10 pages. The overhead is (2^10
++ 1) * 4KB = 4MB + 4KB ~= 4MB.
+
+
+5. 
+We make the transition at kern/entry.S:68 when we jump to relocated. It is
+possible to continue running at a low EIP because we mapped both [0,4MB) and
+[KERNBASE,KERNBASE+4MB) to the low 4MB of physical address space. So once
+paging is enabled, the mapping of the low addresses still works. The transition
+is necessary to setup the rest of memory and leave the low addresses for users.
