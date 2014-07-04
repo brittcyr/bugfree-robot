@@ -1,0 +1,31 @@
+Britt Cyr
+Caffeinated 6.828
+Lab 3 answers
+
+1.
+The reason for havingan individual handler for each interrupt is to be able to
+handle each exception differently and recognize the type of exception. Without
+this, that information would be lost. Also, we would need to make everything go
+through one big function, so the user would be able to call system calls the
+same as exceptions. So if there was not a separate handler, the user would have
+to be able to generate any exception in software because they must also be able
+to make system calls.
+
+
+2. 
+I had to change the trap_init to not allow user-mode calling the page fault
+handler. This should produce vector 13 because when the user tries to invoke
+error code 14 which it cannot, it results in a page fault. If the kernel
+allowed the user to use interrupt 14, then the wrong parameters get pushed and
+the stack is incorrect.
+
+3.
+It depends on what the default privelege level was set to in the IDT. Either it
+is a valid call and is a breakpoint exception, or is a general protection fault
+since the user should not have been able to call it. To make it work, I need
+the DPL for T_BRKPT to be 3 so the user can call it.
+
+4.
+The point of these mechanisms is to be very careful of what exceptions the user
+is allowed to invoke. It manages in what way the user can transfer control to
+the kernel which is useful for things like debug and syscall.
