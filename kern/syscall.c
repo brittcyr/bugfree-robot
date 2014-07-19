@@ -85,7 +85,25 @@ sys_exofork(void)
 	// will appear to return 0.
 
 	// LAB 4: Your code here.
-	panic("sys_exofork not implemented");
+    struct Env * new_env;
+    int success = env_alloc(&new_env, curenv->env_id);
+
+    if (success < 0) {
+        return -E_NO_FREE_ENV;
+    }
+
+    // Make the new env not runnable
+    new_env->env_status = ENV_NOT_RUNNABLE;
+
+    // Copy the register set
+    new_env->env_tf = curenv->env_tf;
+
+    // Make it appear to return 0
+    new_env->env_tf.tf_regs.reg_eax = 0;
+
+    // Return the new env id
+    return new_env->env_id;
+
 }
 
 // Set envid's env_status to status, which must be ENV_RUNNABLE
@@ -105,7 +123,27 @@ sys_env_set_status(envid_t envid, int status)
 	// envid's status.
 
 	// LAB 4: Your code here.
-	panic("sys_env_set_status not implemented");
+    struct Env * env;
+
+    // Go from envid to env
+    int success = envid2env(envid, &env, 1);
+
+    // If it is a bad environment, return -E_BAD_ENV
+    if (success < 0) {
+        return -E_BAD_ENV;
+    }
+
+    // Check if it is a valid status
+    if (status != ENV_RUNNABLE && status != ENV_NOT_RUNNABLE) {
+        return -E_INVAL;
+    }
+
+    // Set the env_status to status
+    env->env_status = status;
+
+    // Return 0 for success
+    return 0;
+
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -120,7 +158,17 @@ static int
 sys_env_set_pgfault_upcall(envid_t envid, void *func)
 {
 	// LAB 4: Your code here.
-	panic("sys_env_set_pgfault_upcall not implemented");
+    struct Env * env;
+    int success = envid2env(envid, &env, 1);
+
+    if (success < 0) { 
+        return -E_BAD_ENV;
+    }
+
+    env->env_pgfault_upcall = func;
+
+    return 0;
+
 }
 
 // Allocate a page of memory and map it at 'va' with permission
@@ -150,7 +198,35 @@ sys_page_alloc(envid_t envid, void *va, int perm)
 	//   allocated!
 
 	// LAB 4: Your code here.
-	panic("sys_page_alloc not implemented");
+    struct PageInfo * page = page_alloc(ALLOC_ZERO);
+
+    struct Env * env;
+    int env_success = envid2env(envid, &env, 1);
+
+    // Check if the environment exists and has permissions
+    if (env_success < 0) {
+        return -E_BAD_ENV;
+    }
+
+    // Check the desired address
+    if ((uint32_t) va >= UTOP || (uint32_t) va % PGSIZE != 0) {
+        return -E_INVAL;
+    }
+
+    // Check the permissions
+    if (!(perm & PTE_U) || !(perm & PTE_P)) {
+        return -E_INVAL;
+    }
+
+    int insert_success = page_insert(env->env_pgdir, page, va, perm);
+    
+    if (insert_success < 0) {
+        page_free(page);
+        return -E_NO_MEM;
+    }
+    
+    return 0;
+
 }
 
 // Map the page of memory at 'srcva' in srcenvid's address space
@@ -181,7 +257,49 @@ sys_page_map(envid_t srcenvid, void *srcva,
 	//   check the current permissions on the page.
 
 	// LAB 4: Your code here.
-	panic("sys_page_map not implemented");
+
+    struct Env * src_env;
+    struct Env * dest_env;
+    int env_src_success = envid2env(srcenvid, &src_env, 1);
+    int env_dest_success = envid2env(dstenvid, &dest_env, 1);
+
+    // Check if the envs exist
+    if (env_src_success < 0 || env_dest_success < 0) {
+        return -E_BAD_ENV;
+    }
+
+    // Check the virtual addresses
+    if ((uint32_t)srcva >= UTOP || (uint32_t)dstva >= UTOP ||
+        (uint32_t)srcva % PGSIZE != 0 ||
+        (uint32_t)dstva % PGSIZE != 0) {
+        return -E_INVAL;
+    }
+
+    // Check the permissions
+    if (!(perm & PTE_U) || !(perm & PTE_P)) {
+        return -E_INVAL;
+    }
+
+    pte_t * pte_store;
+    struct PageInfo * page = page_lookup(src_env->env_pgdir, srcva, &pte_store);
+
+    // Check the va is mapped
+    if (page == NULL) {
+        return -E_INVAL;
+    }
+
+    // Check the permissions so that it does not get write access
+    if ((perm & PTE_W) && ((*pte_store & PTE_W) == 0)) {
+        return -E_INVAL;
+    }
+
+    // Insert the page
+    int insert_success = page_insert(dest_env->env_pgdir, page, dstva, perm);
+    if (insert_success < 0) {
+        return -E_NO_MEM;
+    }
+
+    return 0;
 }
 
 // Unmap the page of memory at 'va' in the address space of 'envid'.
@@ -197,7 +315,23 @@ sys_page_unmap(envid_t envid, void *va)
 	// Hint: This function is a wrapper around page_remove().
 
 	// LAB 4: Your code here.
-	panic("sys_page_unmap not implemented");
+
+    struct Env * env;
+    int env_success = envid2env(envid, &env, 1);
+
+    // check the env exists
+    if (env_success < 0) {
+        return -E_BAD_ENV;
+    }  
+
+    // Check the va
+    if ((uint32_t) va >= UTOP || (uint32_t)va % PGSIZE != 0) {
+        return -E_INVAL;
+    }
+
+    page_remove(env->env_pgdir, va);
+
+    return 0;
 }
 
 // Try to send 'value' to the target env 'envid'.
@@ -241,8 +375,57 @@ sys_page_unmap(envid_t envid, void *va)
 static int
 sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 {
+    struct Env * env;
+    int env_success = envid2env(envid, &env, 0);
+
+    // check the env exists
+    if (env_success < 0) {
+        return -E_BAD_ENV;
+    }  
+
+    // check if the env is receiving now
+    if (env->env_ipc_recving != 1) {
+        return -E_IPC_NOT_RECV;
+    }
+
+    if ((uint32_t) srcva < UTOP) {
+        if ((uint32_t) srcva % PGSIZE != 0) {
+            return -E_INVAL;
+        }
+        if (!(perm & PTE_U) | !(perm & PTE_P)) {
+            return -E_INVAL;
+        }
+        /*
+        if ((uint32_t) env->env_ipc_dstva < UTOP) {
+            if (sys_page_map(0, srcva, envid, env->env_ipc_dstva, perm) < 0) {
+                cprintf("NO MEM\n");
+                return -E_NO_MEM;
+            }
+        }
+        */
+        struct PageInfo* page;
+        pte_t* pte;
+        if (!(page = page_lookup(curenv->env_pgdir, srcva, &pte))) {
+            return -E_INVAL;
+        }
+        if ((perm & PTE_W) && (*pte & PTE_W) == 0) {
+            return -E_INVAL;
+        }
+        if (!page_insert(env->env_pgdir, page, env->env_ipc_dstva, perm) < 0) {
+            return -E_INVAL;
+        }
+    }
+
+    env->env_ipc_recving = 0;
+    env->env_ipc_from = curenv->env_id;
+    env->env_ipc_value = value;
+    env->env_tf.tf_regs.reg_eax = 0;
+    env->env_ipc_perm = ((uint32_t) srcva < UTOP && (uint32_t) env->env_ipc_dstva < UTOP) ? perm : 0;
+    env->env_status = ENV_RUNNABLE;
+
+    return 0;
+
 	// LAB 4: Your code here.
-	panic("sys_ipc_try_send not implemented");
 }
 
 // Block until a value is ready.  Record that you want to receive
@@ -260,7 +443,13 @@ static int
 sys_ipc_recv(void *dstva)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_recv not implemented");
+    if ((uint32_t) dstva < UTOP && (uint32_t) dstva % PGSIZE != 0){
+        return -E_INVAL;
+    }
+    curenv->env_ipc_dstva = dstva;
+    curenv->env_ipc_recving = 1;
+    curenv->env_status = ENV_NOT_RUNNABLE;
+    sched_yield();
 	return 0;
 }
 
@@ -282,6 +471,26 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
             return sys_getenvid();
         case SYS_env_destroy:
             return sys_env_destroy((envid_t) a1);
+        case SYS_exofork:
+            return sys_exofork();
+        case SYS_env_set_status:
+            return sys_env_set_status((envid_t) a1, (int) a2);
+        case SYS_page_alloc:
+            return sys_page_alloc((envid_t) a1 , (void *) a2, (int) a3);
+        case SYS_page_map:
+            return sys_page_map((envid_t) a1, (void *) a2, (envid_t) a3, (void *) a4, (int) a5);
+        case SYS_page_unmap:
+            return sys_page_unmap((envid_t) a1, (void *) a2);
+        case SYS_env_set_pgfault_upcall:
+            return sys_env_set_pgfault_upcall((envid_t) a1, (void *) a2);
+        case SYS_yield:
+            sys_yield();
+            break;
+        case SYS_ipc_recv:
+            return sys_ipc_recv((void *) a1);
+        case SYS_ipc_try_send:
+            return sys_ipc_try_send((envid_t) a1, (uint32_t) a2, (void *) a3, (unsigned) a4);
+
 	default:
 		return -E_NO_SYS;
 	}

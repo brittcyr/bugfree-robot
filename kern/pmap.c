@@ -230,6 +230,7 @@ mem_init(void)
 	// we just set up the mapping anyway.
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, KERNBASE, -KERNBASE, 0, PTE_P|PTE_W);
 
 	// Initialize the SMP-related parts of the memory map
 	mem_init_mp();
@@ -282,6 +283,28 @@ mem_init_mp(void)
 	//
 	// LAB 4: Your code here:
 
+    int i = 0;
+    for ( ; i < NCPU; i++) {
+        // For each cpu, map the space described above but subtract
+        // KSTKSIZE because it grows down and we need the start from bottom
+        boot_map_region(
+                kern_pgdir, 
+                KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE, 
+                KSTKSIZE, 
+                PADDR(percpu_kstacks[i]),
+                PTE_P | PTE_W
+                );
+
+        // Map this region that is not backed by phsyical memory
+        boot_map_region(
+                kern_pgdir, 
+                KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE - KSTKGAP, 
+                KSTKGAP, 
+                0,
+                0
+                );
+    }
+
 }
 
 // --------------------------------------------------------------
@@ -322,8 +345,9 @@ page_init(void)
 	// free pages!
 	size_t i;
 	for (i = 0; i < npages; i++) {
-        if (i == 0) {
-            // This is case 1
+        if (i == 0 || i == MPENTRY_PADDR / PGSIZE) {
+            // This is case 1 or
+            // This is the multiprocessor case
     		pages[i].pp_ref = 1;
         }
         else if (i >= 1 && i < npages_basemem) {
@@ -647,7 +671,18 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+    size = ROUNDUP(size, PGSIZE);
+
+    if (base + size > MMIOLIM) {
+        panic("Overflow MMIOLIM");
+    }
+
+    boot_map_region(kern_pgdir, base, size, pa, PTE_P | PTE_PCD | PTE_PWT | PTE_W);
+
+    uintptr_t base_of_reserved = base;
+    base += size;
+    return (void *) base_of_reserved;
+
 }
 
 static uintptr_t user_mem_check_addr;

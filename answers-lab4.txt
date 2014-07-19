@@ -1,0 +1,26 @@
+Britt Cyr
+Caffeinated 6.828
+Lab 4 answers
+
+1.
+The purpose of MPBOOTPHYS is to convert to a physical address relative to
+MPENTRY_PADDR. It is necessary in mpentry.S but not boot.S because mpentry.S
+has already made the jump up to high address space while boot.S starts and
+stays with low addresses. If it were omitted in kern/mpentry.S, the kernel
+could not run because it would not have the right address.
+
+2.
+We need separate kernel stacks for each CPU because in the case that we have to
+switch CPUs due to an interrupt, the other CPU could contaminate the stack and
+when we restart the first CPU, it will not have the stack it expected.
+
+3.
+It is in kern_pgdir which is always mapped to the high addresses above UTOP.
+This makes it so that the virtual address will always point to the same
+physical address in each address space.
+
+4.
+It needs to save the registers so that when it restarts execution, it can have
+the same state and be seamless as though there was no environment switch. This
+happens in kern/trapentry.S where it pushal all the registers onto the stack.
+It is recovered in env_run when it env_pop_tf to popal them off.
