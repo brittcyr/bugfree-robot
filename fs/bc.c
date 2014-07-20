@@ -34,6 +34,15 @@ bc_pgfault(struct UTrapframe *utf)
 	//
 	// LAB 5: you code here:
 
+    addr = ROUNDDOWN(addr, PGSIZE);
+
+    if (sys_page_alloc(thisenv->env_id, addr, PTE_P | PTE_U | PTE_W)) {
+        panic("Could not allocate a page");
+    }
+
+    if (ide_read(blockno* BLKSECTS, addr, BLKSECTS)) {
+        panic("Could not read disk");
+    }
 }
 
 

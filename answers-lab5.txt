@@ -1,0 +1,14 @@
+Britt Cyr
+Caffeinated 6.828
+Lab 5 answers
+
+1.
+You do not need to do anything to make sure that the IO privelege is preserved
+because when the kernel switches environments, it saves the trapframe which
+includes the tf_eflags which has the IO privelege.
+
+2.
+This lab took about 3 hours.
+
+3.
+I feel like I understand enough about the file system.
